@@ -10,7 +10,7 @@ Automatic music transcription: audio in, chord sheet out.
 
 - Python (version pinned in `pyproject.toml`)
 - [uv](https://docs.astral.sh/uv/) for dependency management
-- FFmpeg, for decoding compressed audio formats
+- [FFmpeg](https://ffmpeg.org/), available on `PATH`, for decoding audio
 
 ## Quickstart
 
@@ -22,13 +22,29 @@ uv sync
 
 That creates the virtual environment and installs both runtime and dev dependencies. Run anything in the project with `uv run`:
 
+## Audio ingestion
+
+MangoMusic can currently decode an FFmpeg-supported audio file into a mono
+`float32` NumPy signal at a requested sample rate:
+
+```python
+from pathlib import Path
+
+from mangomusic.audio import load_audio
+
+samples, sample_rate_hz = load_audio(Path("song.mp3"), 22_050)
+```
+
+Rhythm, chroma, chord recognition, and chart generation are still under
+development.
+
 ## Project layout
 
 ```
 mangomusic/
 ├── src/mangomusic/       # package source
-│   └── models.py         # MangoModel — shared Pydantic base class
-├── data/                 # Data and music files
+│   ├── audio.py          # decoding, resampling, and canonicalization
+│   └── errors.py         # public exception hierarchy
 ├── tests/                # pytest suite
 ├── docs/
 ├── AGENTS.md             # instructions for coding agents working in this repo
@@ -38,7 +54,7 @@ mangomusic/
 
 ## Development
 
-Three quality gates, all runnable through `uv`:
+Four quality gates, all runnable through `uv`:
 
 ```shell
 uv run ruff format .      # formatting
