@@ -35,8 +35,30 @@ from mangomusic.audio import load_audio
 samples, sample_rate_hz = load_audio(Path("song.mp3"), 22_050)
 ```
 
-Rhythm, chroma, chord recognition, and chart generation are still under
-development.
+Chroma, chord recognition, and chart generation are still under development.
+
+## Rhythm analysis
+
+MangoMusic can compute an onset-strength representation and analyze decoded
+audio for a global tempo, ordered beat timestamps, and confidence estimates:
+
+```python
+from pathlib import Path
+
+from mangomusic.audio import load_audio
+from mangomusic.rhythm import analyze_rhythm, compute_onset_strength
+
+samples, sample_rate_hz = load_audio(Path("song.mp3"), 22_050)
+onset_strength, onset_times_seconds = compute_onset_strength(
+    samples,
+    sample_rate_hz,
+)
+rhythm = analyze_rhythm(samples, sample_rate_hz)
+```
+
+Beat grouping assumes 4/4 time. The first detected beat is labeled beat one of
+bar one; this initial implementation does not infer the musical downbeat.
+Silent and non-rhythmic inputs return no BPM or beats and zero tempo confidence.
 
 ## Project layout
 
@@ -44,6 +66,7 @@ development.
 mangomusic/
 ├── src/mangomusic/       # package source
 │   ├── audio.py          # decoding, resampling, and canonicalization
+│   ├── rhythm.py         # onset, tempo, and beat analysis
 │   └── errors.py         # public exception hierarchy
 ├── tests/                # pytest suite
 ├── docs/
@@ -68,7 +91,8 @@ All four must pass before a change is considered done. `AGENTS.md` has the full 
 ## Roadmap
 
 - [ ] Audio loading and resampling
-- [ ] Beat and downbeat tracking
+- [x] Onset strength, global tempo, and beat tracking
+- [ ] Downbeat inference
 - [ ] Chroma feature extraction
 - [ ] Chord recognition
 - [ ] Beat-aligned segmentation
