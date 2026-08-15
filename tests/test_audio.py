@@ -48,6 +48,46 @@ def test_load_audio_rejects_missing_input(tmp_path: Path) -> None:
         audio.load_audio(tmp_path / "missing.wav", 22_050)
 
 
+@pytest.mark.parametrize("start_time_seconds", [-1.0, float("nan"), float("inf")])
+def test_load_audio_rejects_invalid_start_time(
+    tmp_path: Path,
+    start_time_seconds: float,
+) -> None:
+    with pytest.raises(ValueError, match="start_time_seconds"):
+        audio.load_audio(
+            tmp_path / "missing.wav",
+            22_050,
+            start_time_seconds=start_time_seconds,
+        )
+
+
+@pytest.mark.parametrize("stop_time_seconds", [float("nan"), float("inf")])
+def test_load_audio_rejects_nonfinite_stop_time(
+    tmp_path: Path,
+    stop_time_seconds: float,
+) -> None:
+    with pytest.raises(ValueError, match="stop_time_seconds must be finite"):
+        audio.load_audio(
+            tmp_path / "missing.wav",
+            22_050,
+            stop_time_seconds=stop_time_seconds,
+        )
+
+
+@pytest.mark.parametrize("stop_time_seconds", [-1.0, 0.0, 4.0])
+def test_load_audio_rejects_stop_time_not_after_start(
+    tmp_path: Path,
+    stop_time_seconds: float,
+) -> None:
+    with pytest.raises(ValueError, match="must be greater"):
+        audio.load_audio(
+            tmp_path / "missing.wav",
+            22_050,
+            start_time_seconds=4.0,
+            stop_time_seconds=stop_time_seconds,
+        )
+
+
 def test_load_audio_rejects_directory(tmp_path: Path) -> None:
     with pytest.raises(AudioDecodeError, match="not a file"):
         audio.load_audio(tmp_path, 22_050)
@@ -114,6 +154,53 @@ def test_load_audio_does_not_amplify_quiet_audio(
     samples, _ = audio.load_audio(input_path, 44_100)
 
     np.testing.assert_allclose(samples, decoded, rtol=0.0, atol=1e-7)
+
+
+def test_load_audio_passes_requested_time_range_to_ffmpeg(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = _audio_file(tmp_path)
+    decoded = np.array([0.1], dtype=np.float32)
+    result = subprocess.CompletedProcess(
+        args=["ffmpeg"],
+        returncode=0,
+        stdout=decoded.tobytes(),
+        stderr=b"",
+    )
+    commands = _use_ffmpeg_result(monkeypatch, result)
+
+    audio.load_audio(
+        input_path,
+        22_050,
+        start_time_seconds=12.5,
+        stop_time_seconds=15.75,
+    )
+
+    command = commands[0]
+    assert command[command.index("-ss") + 1] == "12.5"
+    assert command[command.index("-t") + 1] == "3.25"
+    assert command.index("-ss") > command.index("-i")
+
+
+def test_load_audio_omits_time_range_options_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = _audio_file(tmp_path)
+    decoded = np.array([0.1], dtype=np.float32)
+    result = subprocess.CompletedProcess(
+        args=["ffmpeg"],
+        returncode=0,
+        stdout=decoded.tobytes(),
+        stderr=b"",
+    )
+    commands = _use_ffmpeg_result(monkeypatch, result)
+
+    audio.load_audio(input_path, 22_050)
+
+    assert "-ss" not in commands[0]
+    assert "-t" not in commands[0]
 
 
 def test_load_audio_reports_ffmpeg_failure(

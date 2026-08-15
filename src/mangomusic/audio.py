@@ -1,5 +1,6 @@
 """Audio decoding and canonicalization."""
 
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,24 +17,34 @@ _FFMPEG_ERROR_LIMIT = 1_000
 def load_audio(
     input_path: Path,
     target_sample_rate_hz: int,
+    *,
+    start_time_seconds: float = 0.0,
+    stop_time_seconds: float | None = None,
 ) -> tuple[npt.NDArray[np.float32], int]:
     """Load an audio file as mono, finite ``float32`` samples.
 
     Args:
         input_path: Path to a local audio file.
         target_sample_rate_hz: Output sample rate in hertz. Must be positive.
+        start_time_seconds: Inclusive section start time in seconds. Must be
+            finite and nonnegative.
+        stop_time_seconds: Exclusive section stop time in seconds, or ``None``
+            to decode through the end of the file. Must be finite and greater
+            than ``start_time_seconds``.
 
     Returns:
         A writable sample array with shape ``(sample_count,)`` and amplitudes in
         ``[-1.0, 1.0]``, plus the output sample rate in hertz.
 
     Raises:
-        ValueError: If ``target_sample_rate_hz`` is not positive.
+        ValueError: If ``target_sample_rate_hz`` or the requested time range is
+            invalid.
         AudioDecodeError: If the input or FFmpeg output cannot produce a usable
             audio signal.
     """
     if target_sample_rate_hz <= 0:
         raise ValueError("target_sample_rate_hz must be positive")
+    _validate_time_range(start_time_seconds, stop_time_seconds)
 
     _validate_input_file(input_path)
     ffmpeg_path = _find_ffmpeg()
@@ -41,6 +52,8 @@ def load_audio(
         ffmpeg_path,
         input_path,
         target_sample_rate_hz,
+        start_time_seconds,
+        stop_time_seconds,
     )
 
     try:
@@ -60,6 +73,20 @@ def load_audio(
         np.clip(samples, -1.0, 1.0, out=samples)
 
     return samples, target_sample_rate_hz
+
+
+def _validate_time_range(
+    start_time_seconds: float,
+    stop_time_seconds: float | None,
+) -> None:
+    if not math.isfinite(start_time_seconds) or start_time_seconds < 0.0:
+        raise ValueError("start_time_seconds must be finite and nonnegative")
+    if stop_time_seconds is None:
+        return
+    if not math.isfinite(stop_time_seconds):
+        raise ValueError("stop_time_seconds must be finite")
+    if stop_time_seconds <= start_time_seconds:
+        raise ValueError("stop_time_seconds must be greater than start_time_seconds")
 
 
 def _validate_input_file(input_path: Path) -> None:
@@ -88,8 +115,10 @@ def _build_ffmpeg_command(
     ffmpeg_path: Path,
     input_path: Path,
     target_sample_rate_hz: int,
+    start_time_seconds: float,
+    stop_time_seconds: float | None,
 ) -> list[str]:
-    return [
+    command = [
         str(ffmpeg_path),
         "-hide_banner",
         "-loglevel",
@@ -97,21 +126,35 @@ def _build_ffmpeg_command(
         "-nostdin",
         "-i",
         str(input_path),
-        "-map",
-        "0:a:0",
-        "-vn",
-        "-sn",
-        "-dn",
-        "-ac",
-        "1",
-        "-ar",
-        str(target_sample_rate_hz),
-        "-f",
-        "f32le",
-        "-codec:a",
-        "pcm_f32le",
-        "pipe:1",
     ]
+    if start_time_seconds > 0.0:
+        command.extend(["-ss", _format_time_seconds(start_time_seconds)])
+    if stop_time_seconds is not None:
+        duration_seconds = stop_time_seconds - start_time_seconds
+        command.extend(["-t", _format_time_seconds(duration_seconds)])
+    command.extend(
+        [
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-sn",
+            "-dn",
+            "-ac",
+            "1",
+            "-ar",
+            str(target_sample_rate_hz),
+            "-f",
+            "f32le",
+            "-codec:a",
+            "pcm_f32le",
+            "pipe:1",
+        ]
+    )
+    return command
+
+
+def _format_time_seconds(time_seconds: float) -> str:
+    return format(time_seconds, ".12g")
 
 
 def _run_ffmpeg(command: list[str]) -> subprocess.CompletedProcess[bytes]:
