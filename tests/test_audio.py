@@ -1,13 +1,17 @@
 """Tests for the audio ingestion boundary."""
 
 import subprocess
+import wave
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from mangomusic import audio
 from mangomusic.errors import AudioDecodeError
+
+_PCM16_SCALE = np.float32(32_768.0)
 
 
 def _audio_file(tmp_path: Path) -> Path:
@@ -32,6 +36,47 @@ def _use_ffmpeg_result(
     monkeypatch.setattr(audio, "_find_ffmpeg", find_ffmpeg)
     monkeypatch.setattr(audio, "_run_ffmpeg", run_ffmpeg)
     return commands
+
+
+def _sine_wave(
+    sample_rate_hz: int,
+    duration_seconds: float,
+    frequency_hz: float,
+    amplitude: float = 0.25,
+) -> npt.NDArray[np.float32]:
+    sample_count = round(sample_rate_hz * duration_seconds)
+    sample_indices = np.arange(sample_count, dtype=np.float64)
+    phase = 2.0 * np.pi * frequency_hz * sample_indices / sample_rate_hz
+    return np.asarray(amplitude * np.sin(phase), dtype=np.float32)
+
+
+def _write_pcm16_wav(
+    path: Path,
+    samples: npt.NDArray[np.float32],
+    sample_rate_hz: int,
+) -> npt.NDArray[np.int16]:
+    if samples.ndim == 1:
+        channel_count = 1
+    elif samples.ndim == 2:
+        channel_count = samples.shape[1]
+    else:
+        raise ValueError("WAV samples must have one or two dimensions")
+
+    pcm_samples: npt.NDArray[np.int16] = np.rint(
+        np.clip(samples, -1.0, 1.0) * np.iinfo(np.int16).max
+    ).astype(np.int16)
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(channel_count)
+        wav_file.setsampwidth(np.dtype(np.int16).itemsize)
+        wav_file.setframerate(sample_rate_hz)
+        wav_file.writeframes(pcm_samples.tobytes())
+
+    return pcm_samples
+
+
+def _root_mean_square(samples: npt.NDArray[np.float32]) -> float:
+    values = samples.astype(np.float64)
+    return float(np.sqrt(np.mean(values * values)))
 
 
 @pytest.mark.parametrize("sample_rate_hz", [0, -1])
@@ -159,3 +204,105 @@ def test_load_audio_rejects_unusable_decoder_output(
 
     with pytest.raises(AudioDecodeError, match=expected_message):
         audio.load_audio(input_path, 22_050)
+
+
+def test_load_audio_decodes_generated_mono_wav(tmp_path: Path) -> None:
+    sample_rate_hz = 22_050
+    input_path = tmp_path / "generated mono audio.wav"
+    source = _sine_wave(sample_rate_hz, 1.0, 440.0)
+    pcm_source = _write_pcm16_wav(input_path, source, sample_rate_hz)
+
+    samples, actual_sample_rate_hz = audio.load_audio(input_path, sample_rate_hz)
+
+    expected = pcm_source.astype(np.float32) / _PCM16_SCALE
+    assert samples.shape == (sample_rate_hz,)
+    assert samples.dtype == np.dtype(np.float32)
+    assert actual_sample_rate_hz == sample_rate_hz
+    assert bool(np.all(np.isfinite(samples)))
+    assert samples.flags.writeable
+    np.testing.assert_allclose(
+        samples,
+        expected,
+        rtol=0.0,
+        atol=1.0 / float(_PCM16_SCALE),
+    )
+
+
+def test_load_audio_downmixes_generated_stereo_wav(tmp_path: Path) -> None:
+    sample_rate_hz = 22_050
+    half_sample_count = sample_rate_hz // 2
+    tone = _sine_wave(sample_rate_hz, 0.5, 440.0)
+    stereo = np.zeros((sample_rate_hz, 2), dtype=np.float32)
+    stereo[:half_sample_count, 0] = tone
+    stereo[half_sample_count:, 1] = tone
+    input_path = tmp_path / "generated stereo audio.wav"
+    _write_pcm16_wav(input_path, stereo, sample_rate_hz)
+
+    samples, _ = audio.load_audio(input_path, sample_rate_hz)
+
+    margin_samples = 256
+    left_only_rms = _root_mean_square(
+        samples[margin_samples : half_sample_count - margin_samples]
+    )
+    right_only_rms = _root_mean_square(
+        samples[half_sample_count + margin_samples : -margin_samples]
+    )
+    assert samples.shape == (sample_rate_hz,)
+    assert left_only_rms > 0.01
+    assert right_only_rms > 0.01
+    np.testing.assert_allclose(
+        left_only_rms,
+        right_only_rms,
+        rtol=0.01,
+        atol=1e-5,
+    )
+
+
+def test_load_audio_resamples_generated_wav(tmp_path: Path) -> None:
+    source_sample_rate_hz = 48_000
+    target_sample_rate_hz = 22_050
+    frequency_hz = 440.0
+    source = _sine_wave(source_sample_rate_hz, 1.0, frequency_hz)
+    input_path = tmp_path / "generated resampled audio.wav"
+    _write_pcm16_wav(input_path, source, source_sample_rate_hz)
+
+    samples, actual_sample_rate_hz = audio.load_audio(
+        input_path,
+        target_sample_rate_hz,
+    )
+
+    assert actual_sample_rate_hz == target_sample_rate_hz
+    assert abs(samples.size - target_sample_rate_hz) <= 1
+    duration_seconds = samples.size / actual_sample_rate_hz
+    np.testing.assert_allclose(
+        duration_seconds,
+        1.0,
+        rtol=0.0,
+        atol=1.0 / target_sample_rate_hz,
+    )
+
+    spectrum = np.abs(np.fft.rfft(samples.astype(np.float64)))
+    peak_index = int(np.argmax(spectrum[1:])) + 1
+    frequencies_hz = np.fft.rfftfreq(
+        samples.size,
+        d=1.0 / actual_sample_rate_hz,
+    )
+    peak_frequency_hz = float(frequencies_hz[peak_index])
+    np.testing.assert_allclose(
+        peak_frequency_hz,
+        frequency_hz,
+        rtol=0.0,
+        atol=1.0,
+    )
+
+
+def test_load_audio_rejects_corrupt_file_with_real_ffmpeg(tmp_path: Path) -> None:
+    input_path = tmp_path / "corrupt audio.wav"
+    input_path.write_bytes(b"this is not an audio file")
+
+    with pytest.raises(AudioDecodeError) as error:
+        audio.load_audio(input_path, 22_050)
+
+    message = str(error.value)
+    assert "Could not decode audio file" in message
+    assert str(input_path) in message
