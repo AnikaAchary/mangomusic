@@ -7,6 +7,8 @@ Desktop.ini
 *.mp3
 *.aac
 *.opus
+*.flac
+*.wav
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
