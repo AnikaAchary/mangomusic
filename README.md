@@ -35,6 +35,10 @@ from mangomusic.audio import load_audio
 samples, sample_rate_hz = load_audio(Path("song.mp3"), 22_050)
 ```
 
+Use `start_time_seconds` and `stop_time_seconds` to decode a specific interval.
+
+Rhythm, chroma, chord recognition, and chart generation are still under
+development.
 Chroma, chord recognition, and chart generation are still under development.
 
 ## Rhythm analysis
@@ -90,7 +94,7 @@ All four must pass before a change is considered done. `AGENTS.md` has the full 
 
 ## Roadmap
 
-- [ ] Audio loading and resampling
+- [x] Audio loading and resampling
 - [x] Onset strength, global tempo, and beat tracking
 - [ ] Downbeat inference
 - [ ] Chroma feature extraction
