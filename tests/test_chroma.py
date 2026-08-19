@@ -212,6 +212,21 @@ def test_aggregate_chroma_by_beat_returns_one_vector_per_beat() -> None:
         assert _strongest_pitch_classes(beat_chroma[:, beat_index]) == {0, 4, 7}
 
 
+def test_aggregate_chroma_by_beat_handles_silence_without_beats() -> None:
+    chroma = np.zeros((PITCH_CLASS_COUNT, 3), dtype=np.float32)
+    frame_times_seconds = np.array([0.0, 0.1, 0.2], dtype=np.float64)
+    beat_times_seconds = np.array([], dtype=np.float64)
+
+    beat_chroma = aggregate_chroma_by_beat(
+        chroma,
+        frame_times_seconds,
+        beat_times_seconds,
+    )
+
+    assert beat_chroma.shape == (PITCH_CLASS_COUNT, 0)
+    assert beat_chroma.dtype == np.dtype(np.float32)
+
+
 def test_aggregate_chroma_by_beat_is_zero_when_no_pitch_class_persists() -> None:
     # Every frame in the span sounds a different single pitch class, so no pitch
     # class is present in a majority of frames and the median has no content to
@@ -465,7 +480,6 @@ def test_aggregate_chroma_by_beat_rejects_unusable_frame_times(
 @pytest.mark.parametrize(
     "beat_times_seconds, expected_message",
     [
-        (np.array([], dtype=np.float64), "must not be empty"),
         (np.zeros((2, 1), dtype=np.float64), "one-dimensional"),
         (np.array([0.0, np.inf], dtype=np.float64), "only finite"),
         (np.array([-0.1, 0.2], dtype=np.float64), "nonnegative"),

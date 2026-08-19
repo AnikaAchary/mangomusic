@@ -137,7 +137,8 @@ def aggregate_chroma_by_beat(
         frame_times_seconds: Strictly increasing frame timestamps in seconds
             with shape ``(frame_count,)``.
         beat_times_seconds: Strictly increasing, nonnegative beat timestamps in
-            seconds with shape ``(beat_count,)``. Must not be empty.
+            seconds with shape ``(beat_count,)``. May be empty when no beats are
+            detected.
         aggregation: Reduction applied to the frames of each span. The default
             median ignores a minority of outlying frames, such as the broadband
             energy of a note attack, that would pull the mean.
@@ -147,7 +148,8 @@ def aggregate_chroma_by_beat(
         ``(12, beat_count)``, each column L2-normalized as described in
         :func:`normalize_chroma`. A column is all zeros when its span carries no
         energy, and, under the median, when no pitch class sounds in a majority
-        of the span's frames.
+        of the span's frames. An empty beat grid returns an empty matrix with
+        shape ``(12, 0)``.
 
     Raises:
         ValueError: If the chroma matrix, frame timestamps, or beat timestamps
@@ -156,6 +158,9 @@ def aggregate_chroma_by_beat(
     _validate_chroma(chroma)
     _validate_frame_times(chroma, frame_times_seconds)
     _validate_beat_times(beat_times_seconds)
+
+    if beat_times_seconds.size == 0:
+        return np.empty((PITCH_CLASS_COUNT, 0), dtype=np.float32)
 
     span_starts_seconds = beat_times_seconds.astype(np.float64, copy=False)
     span_stops_seconds = np.concatenate(
@@ -251,8 +256,6 @@ def _validate_frame_times(
 def _validate_beat_times(beat_times_seconds: npt.NDArray[np.float64]) -> None:
     if beat_times_seconds.ndim != 1:
         raise ValueError("beat_times_seconds must be one-dimensional")
-    if beat_times_seconds.size == 0:
-        raise ValueError("beat_times_seconds must not be empty")
     if not bool(np.all(np.isfinite(beat_times_seconds))):
         raise ValueError("beat_times_seconds must contain only finite values")
     if bool(np.any(beat_times_seconds < 0.0)):

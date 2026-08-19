@@ -108,7 +108,9 @@ combined with the median by default, which ignores a minority of outlying frames
 such as the broadband energy of a note attack; pass
 `aggregation=ChromaAggregation.MEAN` for the plain mean. A span holding no frame,
 possible when beats fall closer together than the hop length, falls back to the
-frame nearest the span midpoint.
+frame nearest the span midpoint. If rhythm analysis detects no beats, as with
+silent or non-rhythmic audio, aggregation returns an empty matrix with shape
+`(12, 0)`.
 
 ## Project layout
 
