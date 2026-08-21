@@ -143,7 +143,8 @@ row, keeping output deterministic.
 Each beat is labeled independently: there is no smoothing or continuity across
 beats, so an ambiguous beat can interrupt a run of one chord. Sevenths, extended
 and altered chords, inversions, and bass notes are out of scope for now, as is
-key estimation.
+key estimation. If rhythm analysis detects no beats, recognition returns an empty
+label list.
 
 ## Project layout
 

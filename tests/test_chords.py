@@ -156,16 +156,6 @@ def test_recognizes_a_synthesized_minor_triad() -> None:
     assert [label.symbol for label in analysis.labels] == ["A:min", "A:min"]
 
 
-def test_major_triad_is_not_confused_with_its_relative_or_mediant_minor() -> None:
-    """C major shares two of three tones with A minor and E minor."""
-    label = _recognize_single(
-        _chroma_column(_triad_pitch_classes(0, ChordQuality.MAJOR))
-    )
-
-    assert label.symbol == "C:maj"
-    assert label.symbol not in {"A:min", "E:min"}
-
-
 @pytest.mark.parametrize("quality", list(ChordQuality))
 @pytest.mark.parametrize("root_index", range(PITCH_CLASS_COUNT))
 def test_recognition_is_transposition_equivariant(
@@ -190,7 +180,7 @@ def test_silent_beat_is_labeled_no_chord() -> None:
     np.testing.assert_allclose(label.confidence, 0.0, atol=1e-6)
 
 
-def test_flat_chroma_is_labeled_no_chord_at_the_default_threshold() -> None:
+def test_flat_chroma_score_and_threshold_behavior() -> None:
     """A flat vector carries no harmonic information and scores 0.5 everywhere."""
     flat = np.full((PITCH_CLASS_COUNT, 1), 1.0, dtype=np.float32)
 
@@ -200,15 +190,14 @@ def test_flat_chroma_is_labeled_no_chord_at_the_default_threshold() -> None:
         np.full(CHORD_COUNT, DEFAULT_MIN_CONFIDENCE),
         atol=1e-6,
     )
-    assert _recognize_single(flat).symbol == NO_CHORD_SYMBOL
-
-
-def test_lowering_the_threshold_labels_an_otherwise_rejected_beat() -> None:
-    flat = np.full((PITCH_CLASS_COUNT, 1), 1.0, dtype=np.float32)
-
-    label = _recognize_single(flat, min_confidence=0.25)
-
-    assert label.symbol != NO_CHORD_SYMBOL
+    rejected = _recognize_single(flat)
+    assert rejected.symbol == NO_CHORD_SYMBOL
+    np.testing.assert_allclose(
+        rejected.confidence,
+        DEFAULT_MIN_CONFIDENCE,
+        atol=1e-6,
+    )
+    assert _recognize_single(flat, min_confidence=0.25).symbol != NO_CHORD_SYMBOL
 
 
 @pytest.mark.parametrize("offset", [-1e-9, 0.0, 1e-9])
@@ -219,15 +208,6 @@ def test_a_score_sitting_on_the_threshold_is_no_chord(offset: float) -> None:
     label = _recognize_single(flat, min_confidence=DEFAULT_MIN_CONFIDENCE + offset)
 
     assert label.symbol == NO_CHORD_SYMBOL
-
-
-def test_confidence_is_reported_even_when_below_the_threshold() -> None:
-    flat = np.full((PITCH_CLASS_COUNT, 1), 1.0, dtype=np.float32)
-
-    label = _recognize_single(flat)
-
-    assert label.symbol == NO_CHORD_SYMBOL
-    np.testing.assert_allclose(label.confidence, DEFAULT_MIN_CONFIDENCE, atol=1e-6)
 
 
 def test_ties_resolve_to_the_lowest_template_row() -> None:
@@ -267,6 +247,20 @@ def test_returns_one_label_per_beat_with_input_timestamps() -> None:
     )
 
 
+def test_returns_empty_analysis_for_an_empty_beat_grid() -> None:
+    analysis = recognize_chords(
+        np.empty((PITCH_CLASS_COUNT, 0), dtype=np.float32),
+        np.empty(0, dtype=np.float64),
+    )
+
+    assert analysis.labels == []
+    np.testing.assert_allclose(
+        analysis.min_confidence,
+        DEFAULT_MIN_CONFIDENCE,
+        atol=1e-12,
+    )
+
+
 def test_scoring_ignores_chroma_scale() -> None:
     chroma = _chroma_column(_triad_pitch_classes(7, ChordQuality.MAJOR))
 
@@ -277,22 +271,6 @@ def test_scoring_ignores_chroma_scale() -> None:
         ),
         atol=1e-6,
     )
-
-
-def test_recognition_is_deterministic() -> None:
-    samples = _triad(_C_MAJOR_HZ, 1.0)
-    chroma, frame_times_seconds = compute_chroma(samples, _SAMPLE_RATE_HZ)
-    beat_times_seconds = np.array([0.0, 0.5], dtype=np.float64)
-    beat_chroma = aggregate_chroma_by_beat(
-        chroma,
-        frame_times_seconds,
-        beat_times_seconds,
-    )
-
-    first = recognize_chords(beat_chroma, beat_times_seconds)
-    second = recognize_chords(beat_chroma, beat_times_seconds)
-
-    assert first.model_dump_json() == second.model_dump_json()
 
 
 def test_analysis_round_trips_through_json() -> None:

@@ -170,7 +170,7 @@ def recognize_chords(
 
     Args:
         beat_chroma: Unitless, finite beat-synchronous pitch-class energies with
-            shape ``(12, beat_count)`` and at least one beat, as returned by
+            shape ``(12, beat_count)``, as returned by
             :func:`mangomusic.chroma.aggregate_chroma_by_beat`.
         beat_times_seconds: Strictly increasing, nonnegative beat timestamps in
             seconds with shape ``(beat_count,)``, one per chroma column.
@@ -183,7 +183,8 @@ def recognize_chords(
     Returns:
         One :class:`ChordLabel` per beat, in beat order, alongside the
         ``min_confidence`` that produced them. A label's confidence is its best
-        template score whether or not that score cleared the threshold.
+        template score whether or not that score cleared the threshold. An empty
+        beat grid produces an analysis with no labels.
 
     Raises:
         ValueError: If the chroma matrix, beat timestamps, or minimum
@@ -191,6 +192,10 @@ def recognize_chords(
     """
     if not 0.0 <= min_confidence <= 1.0:
         raise ValueError("min_confidence must lie in [0.0, 1.0]")
+
+    if beat_chroma.shape == (PITCH_CLASS_COUNT, 0):
+        _validate_beat_times(beat_times_seconds, 0)
+        return ChordAnalysis(labels=[], min_confidence=min_confidence)
 
     scores = score_chord_templates(beat_chroma)
     beat_count = scores.shape[1]
