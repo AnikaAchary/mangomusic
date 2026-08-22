@@ -37,7 +37,7 @@ samples, sample_rate_hz = load_audio(Path("song.mp3"), 22_050)
 
 Use `start_time_seconds` and `stop_time_seconds` to decode a specific interval.
 
-Chord recognition and chart generation are still under development.
+Chart generation is still under development.
 
 ## Rhythm analysis
 
@@ -112,6 +112,40 @@ frame nearest the span midpoint. If rhythm analysis detects no beats, as with
 silent or non-rhythmic audio, aggregation returns an empty matrix with shape
 `(12, 0)`.
 
+## Chord recognition
+
+MangoMusic can label each beat with a chord by scoring its chroma vector against
+a bank of chord templates:
+
+```python
+from mangomusic.chords import recognize_chords
+
+analysis = recognize_chords(beat_chroma, beat_times_seconds)
+for label in analysis.labels:
+    print(f"{label.timestamp_seconds:6.2f}  {label.symbol}  {label.confidence:.2f}")
+```
+
+The vocabulary is the 24 major and minor triads plus an explicit no-chord label,
+`N`. Each template carries equal weight on its root, third, and fifth and is
+L2-normalized, so scoring a chroma vector against it yields a cosine similarity in
+`[0.0, 1.0]` — reported as the label's `confidence`. Every template is a rotation
+of the C template of the same quality, so recognition is exactly
+transposition-equivariant.
+
+A beat is labeled `N` when its best score does not exceed `min_confidence`. The
+default of `0.5` is derived rather than tuned: it is the score a flat chroma
+vector — one carrying no harmonic information at all — earns against every triad
+template, so a beat must beat a uniform spectrum to be given a chord. Silence
+scores `0.0` and falls out as `N`. The confidence is reported either way, so a
+rejected beat still shows how close it came. Ties resolve to the lowest template
+row, keeping output deterministic.
+
+Each beat is labeled independently: there is no smoothing or continuity across
+beats, so an ambiguous beat can interrupt a run of one chord. Sevenths, extended
+and altered chords, inversions, and bass notes are out of scope for now, as is
+key estimation. If rhythm analysis detects no beats, recognition returns an empty
+label list.
+
 ## Project layout
 
 ```
@@ -120,6 +154,7 @@ mangomusic/
 │   ├── audio.py          # decoding, resampling, and canonicalization
 │   ├── rhythm.py         # onset, tempo, and beat analysis
 │   ├── chroma.py         # pitch-class features and beat-synchronous aggregation
+│   ├── chords.py         # chord templates and per-beat chord recognition
 │   └── errors.py         # public exception hierarchy
 ├── tests/                # pytest suite
 ├── docs/
@@ -147,7 +182,7 @@ All four must pass before a change is considered done. `AGENTS.md` has the full 
 - [x] Onset strength, global tempo, and beat tracking
 - [ ] Downbeat inference
 - [x] Chroma feature extraction and beat-synchronous aggregation
-- [ ] Chord recognition
+- [x] Chord recognition
 - [ ] Beat-aligned segmentation
 - [ ] Chord sheet rendering
 
