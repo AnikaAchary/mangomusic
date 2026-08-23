@@ -99,7 +99,14 @@ Fix the cause, don't silence the check. No `# type: ignore`, no `# noqa`, no wid
 # Documentation
 
 - Use `README.md` for the project overview, current status, user commands, configuration, and links to detailed documentation.
-- When a change affects documented behavior, architecture, database structure, commands, configuration, requirements, or development workflow, update every affected document in the same change. These documentation updates are required and must not be deferred.
+- `docs/` holds the detailed documentation the README links to. Keep every fact in one place: the detail lives in `docs/`, and the README links to it rather than repeating it. `docs/README.md` indexes the folder — add a row there for any new page.
+- When a change affects documented behavior, architecture, database structure, commands, configuration, requirements, or development workflow, update every affected document in the same change. These documentation updates are required and must not be deferred. In practice:
+  - a pipeline stage's behavior → `docs/pipeline/<stage>.md`
+  - how the stages fit together, or a convention they share → `docs/architecture.md`
+  - where code, tests, or docs live → `docs/repo-layout.md`
+  - a workflow, testing, or style rule → **this file and `docs/contributing.md`**, which restates these rules for humans and defers to this file as authoritative
+  - install steps, requirements, status, or the roadmap → `README.md`
+- A new pipeline stage gets its own page under `docs/pipeline/`, following the skeleton the existing pages share: what the stage does, public API, conventions and units, limitations.
 - Do not document obvious implementation details.
 - If a system change does not require a documentation update, state why in the handoff.
 
@@ -107,4 +114,5 @@ Fix the cause, don't silence the check. No `# type: ignore`, no `# noqa`, no wid
 
 - Put application code under `src/mangomusic/`.
 - Put tests under `tests/`.
+- Put detailed documentation under `docs/`, one page per pipeline stage in `docs/pipeline/`.
 
