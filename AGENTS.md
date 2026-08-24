@@ -82,6 +82,10 @@ Fix the cause, don't silence the check. No `# type: ignore`, no `# noqa`, no wid
 
 - pytest, in `tests/`, mirroring the package layout.
 - **Never commit real music files** — copyright and repo size. Generate fixtures instead.
+  A check that genuinely needs real audio reads it from a directory named by
+  `MANGOMUSIC_SAMPLES_DIR` (default: `Recording_samples` beside the repo) and **skips** when
+  it is absent, so `uv run pytest` stays green without it. Ground truth for those recordings
+  lives in `tests/data/recordings.json` — chord names and timestamps only, never audio.
 - Never assert exact float equality. Use `np.testing.assert_allclose` with an explicit tolerance chosen for the signal, not copied from another test.
 - Every bug fix gets a regression test unless explicitly told to ignore.
 - Validation is behavior: every constrained field gets a test asserting that
@@ -115,4 +119,8 @@ Fix the cause, don't silence the check. No `# type: ignore`, no `# noqa`, no wid
 - Put application code under `src/mangomusic/`.
 - Put tests under `tests/`.
 - Put detailed documentation under `docs/`, one page per pipeline stage in `docs/pipeline/`.
+- Put exploratory notebooks under `notebooks/`. They are for looking at data, not for
+  assertions — anything that must keep passing belongs in `tests/`. Notebook outputs are
+  stripped on commit by nbstripout; run `uv run nbstripout --install --attributes
+  .gitattributes` once per clone.
 

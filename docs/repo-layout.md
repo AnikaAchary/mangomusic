@@ -7,17 +7,25 @@ mangomusic/
 │   ├── rhythm.py         # onset, tempo, and beat analysis
 │   ├── chroma.py         # pitch-class features and beat-synchronous aggregation
 │   ├── chords.py         # chord templates and per-beat chord recognition
+│   ├── recordings.py     # sample-recording lookup and ground-truth manifest
 │   └── errors.py         # public exception hierarchy
 ├── tests/                # pytest suite, one module per source module
 │   ├── test_audio.py
 │   ├── test_rhythm.py
 │   ├── test_chroma.py
-│   └── test_chords.py
+│   ├── test_chords.py
+│   ├── test_recordings.py
+│   ├── test_recording_samples.py   # skipped unless the recordings are present
+│   └── data/             # ground truth for the sample recordings
+│       └── recordings.json
+├── notebooks/            # exploratory notebooks; outputs stripped on commit
+│   └── chromagram_review.ipynb
 ├── docs/                 # this documentation
 │   ├── architecture.md
 │   ├── contributing.md
 │   ├── repo-layout.md
 │   └── pipeline/         # one page per pipeline stage
+├── .gitattributes        # routes notebooks through the nbstripout filter
 ├── AGENTS.md             # instructions for coding agents working in this repo
 ├── CLAUDE.md             # points at AGENTS.md
 ├── pyproject.toml        # project metadata, dependencies, and tool config
@@ -47,6 +55,17 @@ raised directly and is deliberately not part of that hierarchy — see
 **Tests mirror the package.** `tests/test_<module>.py` for
 `src/mangomusic/<module>.py`. Fixtures are generated signals; audio files are
 never committed. See [contributing.md](contributing.md).
+
+`tests/test_recording_samples.py` is the one exception to that mirroring: it is
+named for the data it checks rather than a module, because it validates real
+recordings across several modules at once. Those recordings live outside the
+repository, so it skips unless they are present — see
+[contributing.md](contributing.md#sample-recordings).
+
+**`notebooks/` is for exploration, not for checks.** Notebooks are how you look
+at a recording and decide what is in it; the assertions that must keep passing
+belong in `tests/`. `.gitattributes` routes every notebook through nbstripout so
+outputs never enter git.
 
 **Documentation.** `README.md` is the overview and the entry point: status,
 install, quickstart, roadmap, and links here. `docs/` holds the detail, one page
