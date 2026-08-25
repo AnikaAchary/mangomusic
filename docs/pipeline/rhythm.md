@@ -1,0 +1,93 @@
+# Rhythm analysis
+
+`mangomusic.rhythm` finds the pulse: a global tempo and the timestamps of
+individual beats. Those timestamps become the grid every later stage is
+measured against — chroma is aggregated per beat, and chords are labeled per
+beat.
+
+## Public API
+
+```python
+from pathlib import Path
+
+from mangomusic.audio import load_audio
+from mangomusic.rhythm import analyze_rhythm, compute_onset_strength
+
+samples, sample_rate_hz = load_audio(Path("song.mp3"), 22_050)
+
+onset_strength, onset_times_seconds = compute_onset_strength(samples, sample_rate_hz)
+rhythm = analyze_rhythm(samples, sample_rate_hz)
+```
+
+`compute_onset_strength` exposes the intermediate representation — a
+spectral-flux curve that peaks where energy rises — for inspection and plotting.
+`analyze_rhythm` computes it internally, so a caller who only wants beats does
+not need to call both.
+
+## Results
+
+`analyze_rhythm` returns a `RhythmAnalysis`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `bpm` | `float \| None` | Global tempo in beats per minute, or `None` when no tempo was found |
+| `tempo_confidence` | `float` | How steady the detected pulse is, in `[0.0, 1.0]` |
+| `beats` | `list[BeatEvent]` | Detected beats in time order |
+| `is_silent` | `bool` | Whether the input was judged silent |
+
+Each `BeatEvent` carries `timestamp_seconds` (seconds from the start of the
+analyzed signal), `bar_number` (from `1`), `beat_in_bar` (`1` to `4`), and a
+per-beat `confidence` in `[0.0, 1.0]`.
+
+Both models are pydantic and validate their own consistency: an analysis with no
+`bpm` may not carry beats or a nonzero confidence, an analysis with a `bpm` must
+carry beats, and a silent analysis may not carry a `bpm` at all. These
+combinations cannot be constructed, so callers can branch on `bpm is None`
+alone.
+
+## Conventions and units
+
+- **Input** — mono, finite `float32` samples with shape `(sample_count,)` and a
+  positive integer sample rate in hertz, exactly as
+  [`load_audio`](audio.md) returns them.
+- **Onset strength** — unitless values with shape `(onset_frame_count,)`,
+  paired with timestamps in seconds of the same shape. Timestamps are returned
+  explicitly rather than derived from a frame index, so callers never need to
+  know the internal hop length.
+- **Beat times** — seconds, strictly increasing. Seconds are the interchange
+  unit between stages; frame indices are never passed between modules, because
+  each stage frames the signal at its own hop length.
+
+## Bars and downbeats
+
+Beat grouping assumes 4/4 time. The first detected beat is labeled beat one of
+bar one — the grouping counts from the first beat found, and does **not** infer
+the musical downbeat. A recording that begins mid-bar or with a pickup will have
+bar lines in the wrong place, even when the beat timestamps themselves are
+correct.
+
+## Degenerate input
+
+Two cases return no tempo and no beats, distinguished by `is_silent`:
+
+- **Silent** — root-mean-square amplitude at or below the silence threshold.
+  Returns `is_silent=True` without running beat tracking.
+- **Non-rhythmic** — audio with energy but no trackable pulse, such as a steady
+  tone or noise, where beat tracking finds fewer than two beats. Returns
+  `is_silent=False`.
+
+Neither raises. `ValueError` is reserved for genuinely unusable input: a
+non-positive sample rate, a non-mono or empty array, or non-finite samples.
+
+## Limitations
+
+- One global tempo per input. Tempo changes within a recording are not tracked;
+  analyze sections separately using the time range arguments of
+  [`load_audio`](audio.md).
+- 4/4 only. Other meters are not detected.
+- No downbeat inference — see above.
+
+## Next stage
+
+[Chroma features](chroma.md) uses the beat timestamps to collapse per-frame
+pitch-class energy onto this grid.
