@@ -7,12 +7,15 @@ import numpy.typing as npt
 import pytest
 
 from mangomusic.chroma import (
+    BINS_PER_SEMITONE,
     DEFAULT_HOP_LENGTH_SAMPLES,
     PITCH_CLASS_COUNT,
     PITCH_CLASS_NAMES,
+    SEMITONE_BIN_COUNT,
     ChromaAggregation,
     aggregate_chroma_by_beat,
     compute_chroma,
+    compute_semitone_chroma,
     normalize_chroma,
 )
 
@@ -508,3 +511,88 @@ def test_aggregate_chroma_by_beat_rejects_unusable_chroma() -> None:
             frame_times_seconds,
             beat_times_seconds,
         )
+
+
+def _detune(frequencies_hz: Sequence[float], cents: float) -> tuple[float, ...]:
+    """Shift every frequency by ``cents`` hundredths of a semitone."""
+    return tuple(
+        frequency_hz * 2.0 ** (cents / 1200.0) for frequency_hz in frequencies_hz
+    )
+
+
+def _semitone_trio(
+    semitone_chroma: npt.NDArray[np.float32],
+    pitch_class: int,
+) -> npt.NDArray[np.float64]:
+    """The flat, centered, and sharp bins of one pitch class, averaged over frames."""
+    summary = semitone_chroma.astype(np.float64).mean(axis=1)
+    start = BINS_PER_SEMITONE * pitch_class
+    return summary[start : start + BINS_PER_SEMITONE]
+
+
+def test_compute_semitone_chroma_returns_three_bins_per_pitch_class() -> None:
+    samples = _triad(_C_MAJOR_HZ, duration_seconds=2.0)
+
+    semitone_chroma, frame_times_seconds = compute_semitone_chroma(
+        samples,
+        _SAMPLE_RATE_HZ,
+    )
+
+    frame_count = semitone_chroma.shape[1]
+    assert semitone_chroma.shape == (SEMITONE_BIN_COUNT, frame_count)
+    assert SEMITONE_BIN_COUNT == PITCH_CLASS_COUNT * BINS_PER_SEMITONE
+    assert frame_times_seconds.shape == (frame_count,)
+    assert semitone_chroma.dtype == np.dtype(np.float32)
+    np.testing.assert_allclose(_column_norms(semitone_chroma), 1.0, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "frequencies_hz, expected_pitch_classes",
+    [
+        (_C_MAJOR_HZ, (0, 4, 7)),
+        (_F_MAJOR_HZ, (0, 5, 9)),
+        (_A_MINOR_HZ, (0, 4, 9)),
+    ],
+)
+def test_compute_semitone_chroma_centers_in_tune_triads(
+    frequencies_hz: tuple[float, ...],
+    expected_pitch_classes: tuple[int, ...],
+) -> None:
+    samples = _triad(frequencies_hz, duration_seconds=2.0)
+
+    semitone_chroma, _ = compute_semitone_chroma(samples, _SAMPLE_RATE_HZ)
+
+    for pitch_class in expected_pitch_classes:
+        trio = _semitone_trio(semitone_chroma, pitch_class)
+        assert int(np.argmax(trio)) == 1
+
+
+@pytest.mark.parametrize(
+    "cents, expected_offset",
+    [(-40.0, 0), (40.0, 2)],
+)
+def test_compute_semitone_chroma_moves_detuned_energy_off_center(
+    cents: float,
+    expected_offset: int,
+) -> None:
+    # A440 is the reference, so detuning the source by more than half of a
+    # 33-cent bin must move the strongest bin off the centered one. This is the
+    # distinction the 12-bin chroma cannot draw: there, the same shift merely
+    # leaks energy into a neighboring pitch class.
+    samples = _triad(_detune(_C_MAJOR_HZ, cents), duration_seconds=2.0)
+
+    semitone_chroma, _ = compute_semitone_chroma(samples, _SAMPLE_RATE_HZ)
+
+    trio = _semitone_trio(semitone_chroma, 0)
+    assert int(np.argmax(trio)) == expected_offset
+
+
+def test_compute_semitone_chroma_rejects_unusable_audio() -> None:
+    samples = _triad(_C_MAJOR_HZ, duration_seconds=0.5)
+
+    with pytest.raises(ValueError, match="sample_rate_hz must be positive"):
+        compute_semitone_chroma(samples, 0)
+    with pytest.raises(ValueError, match="hop_length_samples must be positive"):
+        compute_semitone_chroma(samples, _SAMPLE_RATE_HZ, hop_length_samples=0)
+    with pytest.raises(ValueError, match="one-dimensional"):
+        compute_semitone_chroma(np.zeros((2, 8), dtype=np.float32), _SAMPLE_RATE_HZ)

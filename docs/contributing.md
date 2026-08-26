@@ -22,6 +22,34 @@ commit the resulting `uv.lock` alongside the change.
 
 [FFmpeg](https://ffmpeg.org/) must be on `PATH` for the audio tests to run.
 
+Notebooks are filtered through [nbstripout](https://github.com/kynan/nbstripout)
+so their outputs never reach git. `.gitattributes` is committed, but the filter
+itself is local, so run this once per clone:
+
+```sh
+uv run nbstripout --install --attributes .gitattributes
+```
+
+## Sample recordings
+
+Some checks read real guitar recordings. Those files are **not** in the
+repository — see the testing rules below — so the tests that need them skip
+unless you point `MANGOMUSIC_SAMPLES_DIR` at a directory holding them:
+
+```sh
+MANGOMUSIC_SAMPLES_DIR=~/path/to/Recording_samples uv run pytest
+```
+
+The default is a `Recording_samples` directory beside the repository, which is
+where they usually sit during local development, so the variable is often
+unnecessary. `uv run pytest` on a clone without the recordings skips those tests
+and stays green.
+
+What each recording is expected to contain is recorded in
+`tests/data/recordings.json`, which *is* committed — it holds only chord names
+and timestamps, no audio. `notebooks/chromagram_review.ipynb` is how you look at
+a recording and write new entries into it.
+
 ## Definition of done
 
 All four gates must pass before a change is complete:
@@ -71,7 +99,9 @@ Audio buffers and feature matrices are the explicit exception: they stay plain
 Tests live in `tests/`, mirroring the package layout.
 
 - **Never commit real music files** — copyright, and repository size. Generate
-  fixtures instead: synthesized tones, triads, clicks, and noise.
+  fixtures instead: synthesized tones, triads, clicks, and noise. A check that
+  genuinely needs real audio reads it from outside the repository and skips when
+  it is absent — see [Sample recordings](#sample-recordings).
 - **Never assert exact float equality.** Use `np.testing.assert_allclose` with a
   tolerance chosen for the signal at hand, not copied from another test.
 - **Validation is behavior.** Every constrained field gets a test asserting that

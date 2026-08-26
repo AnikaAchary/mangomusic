@@ -80,6 +80,11 @@ uv run pytest             # tests
 
 All four must pass before a change is considered done. [`AGENTS.md`](AGENTS.md) has the full definition-of-done gate, git workflow, and prohibited patterns — read it before contributing, and point any coding agent at it too. [`docs/contributing.md`](docs/contributing.md) is the same material in readable form.
 
+Two extra steps apply to working with recordings, both covered in [`docs/contributing.md`](docs/contributing.md):
+
+- `uv run nbstripout --install --attributes .gitattributes`, once per clone, so notebook outputs never reach git.
+- `MANGOMUSIC_SAMPLES_DIR`, pointing at a directory of sample recordings. The recordings are not in the repository, and the checks that need them skip without it, so `uv run pytest` is green either way.
+
 ## Roadmap
 
 - [x] Audio loading and resampling

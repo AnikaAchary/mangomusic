@@ -38,6 +38,9 @@ beat_chroma = aggregate_chroma_by_beat(
 - `normalize_chroma(chroma)` → the same matrix with unit-length columns. Both
   functions above apply it to their own output; call it directly only when
   building chroma some other way.
+- `compute_semitone_chroma(samples, sample_rate_hz, *, hop_length_samples=512)`
+  → `(36, frame_count)` energies that resolve *within* the semitone, plus frame
+  timestamps. See [Semitone resolution](#semitone-resolution).
 
 ## Conventions and units
 
@@ -71,6 +74,30 @@ Vectors with no energy stay all zeros rather than being given an arbitrary
 direction. Such a vector scores `0.0` against every template, which is what
 makes silence fall out as no-chord downstream instead of matching whichever
 chord an invented direction happened to point at.
+
+## Semitone resolution
+
+`compute_chroma` builds a 36-bin constant-Q transform — three bins per semitone
+— and then sums each semitone's three bins into one pitch class. That last step
+discards *where inside the semitone* the energy sits.
+
+`compute_semitone_chroma` stops one step earlier and keeps those bins apart:
+
+- **Shape** — `(36, frame_count)`, columns L2-normalized like every other
+  chroma. `SEMITONE_BIN_COUNT` is `36` and `BINS_PER_SEMITONE` is `3`.
+- **Row order** — row `3 * pitch_class + offset`, with pitch classes ordered as
+  above and `offset` `0` for roughly 33 cents flat, `1` for centered, and `2`
+  for roughly 33 cents sharp.
+
+This is the only view that separates a **flat note from a different note**. At
+12-bin resolution both simply move energy into a neighboring pitch class, so a
+guitar tuned a third of a semitone flat and a guitar playing the wrong chord
+produce the same evidence. Comparing a pitch class's centered bin against its
+two neighbors tells them apart.
+
+Tuning is still not estimated or corrected here — the function makes the
+deviation *visible*, it does not remove it. Chord recognition continues to
+consume the 12-bin chroma and remains subject to the limitation below.
 
 ## Beat-synchronous aggregation
 
@@ -109,7 +136,9 @@ silently coerced:
 
 ## Limitations
 
-- No tuning estimation — see above.
+- No tuning estimation. `compute_semitone_chroma` exposes how far a recording
+  has drifted from A440, but nothing corrects for it, so a materially detuned
+  recording is mis-analyzed through to its chord labels.
 - Percussive and broadband content contributes energy across pitch classes; the
   median aggregation mitigates transients but there is no harmonic/percussive
   separation.

@@ -1,0 +1,22 @@
+{
+  "recordings": {
+    "guitar_07_sustained.wav": [
+      {"start_seconds": 6.5, "stop_seconds": 8.5, "notes": ["C"], "expect_in_tune": true},
+      {"start_seconds": 9.5, "stop_seconds": 11.5, "notes": ["E"], "expect_in_tune": true},
+      {"start_seconds": 15.0, "stop_seconds": 17.0, "notes": ["G"], "expect_in_tune": true},
+      {"start_seconds": 18.0, "stop_seconds": 20.0, "notes": ["A"], "expect_in_tune": true}
+    ],
+    "guitar_08_together.wav": [
+      {"start_seconds": 4.5, "stop_seconds": 8.0, "notes": ["E"], "expect_in_tune": true}
+    ],
+    "guitar_09_both_triads.wav": [
+      {"start_seconds": 6.0, "stop_seconds": 8.5, "chord": "C:maj", "expect_in_tune": true}
+    ],
+    "guitar_10_complex_rhythm .wav": [
+      {"start_seconds": 30.0, "stop_seconds": 33.0, "chord": "C:maj", "expect_in_tune": true}
+    ],
+    "guitar_11_out_of_tune.wav": [
+      {"start_seconds": 30.0, "stop_seconds": 33.0, "chord": "C:maj", "expect_in_tune": false}
+    ]
+  }
+}

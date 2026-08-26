@@ -22,9 +22,13 @@ PITCH_CLASS_NAMES: tuple[str, ...] = (
 )
 PITCH_CLASS_COUNT = 12
 DEFAULT_HOP_LENGTH_SAMPLES = 512
+BINS_PER_SEMITONE = 3
+SEMITONE_BIN_COUNT = PITCH_CLASS_COUNT * BINS_PER_SEMITONE
 
 _BINS_PER_OCTAVE = 36
 _A440_TUNING_SEMITONES = 0.0
+_CQT_OCTAVE_COUNT = 7
+_CQT_BIN_COUNT = _BINS_PER_OCTAVE * _CQT_OCTAVE_COUNT
 
 
 class ChromaAggregation(StrEnum):
@@ -108,10 +112,78 @@ def normalize_chroma(chroma: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]
             non-finite values.
     """
     _validate_chroma(chroma)
-    values = chroma.astype(np.float64, copy=True)
-    norms = np.sqrt(np.sum(values * values, axis=0))
-    scales = np.where(norms > 0.0, norms, 1.0)
-    return np.asarray(values / scales, dtype=np.float32)
+    return _l2_normalize_columns(chroma.astype(np.float64, copy=True))
+
+
+def compute_semitone_chroma(
+    samples: npt.NDArray[np.float32],
+    sample_rate_hz: int,
+    *,
+    hop_length_samples: int = DEFAULT_HOP_LENGTH_SAMPLES,
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float64]]:
+    """Fold mono audio into pitch-class energy that resolves within the semitone.
+
+    This is :func:`compute_chroma` stopped one step earlier. Both sum a 36-bin
+    constant-Q transform across octaves, but ``compute_chroma`` then collapses
+    each semitone's three bins into one pitch class, which discards how far the
+    energy sits from the semitone center. Keeping those bins apart is what makes
+    a flat note distinguishable from a different note: at the 12-bin resolution
+    both simply move energy into a neighboring pitch class.
+
+    Row ``BINS_PER_SEMITONE * pitch_class + offset`` holds pitch class
+    ``pitch_class``, ordered as in :func:`compute_chroma`, at ``offset`` ``0``
+    for roughly 33 cents flat, ``1`` for centered, and ``2`` for roughly 33
+    cents sharp. Pitch is referenced to A440 equal temperament; the tuning of
+    the input is not estimated, so a recording that is not at A440 shows its
+    energy away from the centered offset rather than being corrected.
+
+    Args:
+        samples: Mono, finite audio amplitudes with shape ``(sample_count,)``.
+            Amplitudes are unitless and expected in ``[-1.0, 1.0]``.
+        sample_rate_hz: Audio sample rate in hertz. Must be positive.
+        hop_length_samples: Frame advance in samples. Must be positive.
+
+    Returns:
+        Unitless energies with shape ``(36, frame_count)``, each column
+        L2-normalized as described in :func:`normalize_chroma`, and the frame
+        timestamps in seconds with shape ``(frame_count,)``. Frame ``index`` is
+        centered at ``index * hop_length_samples / sample_rate_hz`` seconds.
+
+    Raises:
+        ValueError: If the sample rate, hop length, or audio samples are
+            unusable.
+    """
+    _validate_audio(samples, sample_rate_hz)
+    if hop_length_samples <= 0:
+        raise ValueError("hop_length_samples must be positive")
+
+    magnitudes = np.abs(
+        np.asarray(
+            librosa.cqt(
+                y=samples,
+                sr=sample_rate_hz,
+                hop_length=hop_length_samples,
+                bins_per_octave=_BINS_PER_OCTAVE,
+                n_bins=_CQT_BIN_COUNT,
+                tuning=_A440_TUNING_SEMITONES,
+            )
+        )
+    )
+    octave_sum = magnitudes.reshape(
+        _CQT_OCTAVE_COUNT, _BINS_PER_OCTAVE, magnitudes.shape[1]
+    ).sum(axis=0)
+
+    # CQT bin 0 sits exactly on C, so a semitone's centered bin is every third
+    # bin and its flat neighbor is the bin below. Rolling by one puts each
+    # semitone's flat, centered, and sharp bins into consecutive rows, which is
+    # the layout this function documents.
+    semitone_chroma = np.roll(octave_sum.astype(np.float64, copy=False), 1, axis=0)
+
+    frame_indices = np.arange(semitone_chroma.shape[1], dtype=np.float64)
+    frame_times_seconds = (
+        frame_indices * float(hop_length_samples) / float(sample_rate_hz)
+    )
+    return _l2_normalize_columns(semitone_chroma), frame_times_seconds
 
 
 def aggregate_chroma_by_beat(
@@ -214,6 +286,14 @@ def _nearest_frame_index(
         else span_start_seconds
     )
     return int(np.argmin(np.abs(frame_times_seconds - reference_seconds)))
+
+
+def _l2_normalize_columns(
+    values: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float32]:
+    norms = np.sqrt(np.sum(values * values, axis=0))
+    scales = np.where(norms > 0.0, norms, 1.0)
+    return np.asarray(values / scales, dtype=np.float32)
 
 
 def _validate_audio(
