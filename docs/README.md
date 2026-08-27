@@ -20,7 +20,7 @@ In pipeline order — each stage consumes what the one above it produces.
 | Stage | Module | What it produces |
 | --- | --- | --- |
 | [Audio ingestion](pipeline/audio.md) | `mangomusic.audio` | Mono `float32` samples at a requested sample rate |
-| [Rhythm analysis](pipeline/rhythm.md) | `mangomusic.rhythm` | Onset strength, a global tempo, and beat timestamps |
+| [Rhythm analysis](pipeline/rhythm.md) | `mangomusic.rhythm` | Onset strength, a global tempo, beat timestamps, and 4/4 downbeats |
 | [Chroma features](pipeline/chroma.md) | `mangomusic.chroma` | Pitch-class energy per frame, then per beat |
 | [Chord recognition](pipeline/chords.md) | `mangomusic.chords` | A chord label and confidence for each beat |
 

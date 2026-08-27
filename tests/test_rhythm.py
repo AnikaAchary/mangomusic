@@ -44,6 +44,34 @@ def _click_track(
     return samples, beat_times_seconds
 
 
+def _accented_click_track(
+    sample_rate_hz: int,
+    bpm: float,
+    duration_seconds: float,
+    first_beat_seconds: float,
+    first_downbeat_index: int,
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float64]]:
+    samples, beat_times_seconds = _click_track(
+        sample_rate_hz,
+        bpm,
+        duration_seconds,
+        first_beat_seconds,
+    )
+    accent_sample_count = round(0.08 * sample_rate_hz)
+    accent_indices = np.arange(accent_sample_count, dtype=np.float64)
+    accent = np.asarray(
+        0.8
+        * np.exp(-accent_indices / (0.02 * sample_rate_hz))
+        * np.sin(2.0 * np.pi * 80.0 * accent_indices / sample_rate_hz),
+        dtype=np.float32,
+    )
+    for beat_index in range(first_downbeat_index, beat_times_seconds.size, 4):
+        start = round(float(beat_times_seconds[beat_index]) * sample_rate_hz)
+        samples[start : start + accent_sample_count] += accent
+    np.clip(samples, -1.0, 1.0, out=samples)
+    return samples, beat_times_seconds
+
+
 def _valid_beat() -> BeatEvent:
     return BeatEvent(
         timestamp_seconds=0.5,
@@ -104,12 +132,80 @@ def test_analyze_rhythm_tracks_fixed_bpm_clicks() -> None:
     assert [beat.bar_number for beat in analysis.beats] == [
         index // 4 + 1 for index in range(len(analysis.beats))
     ]
+    assert analysis.downbeat_confidence is None
     assert analysis.tempo_confidence > 0.7
     beat_confidences = np.array(
         [beat.confidence for beat in analysis.beats],
         dtype=np.float64,
     )
     assert float(np.mean(beat_confidences)) > 0.7
+
+
+@pytest.mark.parametrize("first_downbeat_index", [0, 1, 2, 3])
+def test_analyze_rhythm_infers_downbeat_phase(first_downbeat_index: int) -> None:
+    sample_rate_hz = 22_050
+    samples, expected_times_seconds = _accented_click_track(
+        sample_rate_hz,
+        bpm=120.0,
+        duration_seconds=12.0,
+        first_beat_seconds=0.5,
+        first_downbeat_index=first_downbeat_index,
+    )
+
+    analysis = analyze_rhythm(samples, sample_rate_hz)
+
+    assert analysis.downbeat_confidence is not None
+    detected_times_seconds = np.array(
+        [beat.timestamp_seconds for beat in analysis.beats],
+        dtype=np.float64,
+    )
+    expected_indices = np.argmin(
+        np.abs(detected_times_seconds[:, np.newaxis] - expected_times_seconds),
+        axis=1,
+    )
+    expected_beats_in_bar = [
+        (int(index) - first_downbeat_index) % 4 + 1 for index in expected_indices
+    ]
+    assert [beat.beat_in_bar for beat in analysis.beats] == expected_beats_in_bar
+
+
+def test_analyze_rhythm_numbers_a_leading_partial_bar() -> None:
+    sample_rate_hz = 22_050
+    samples, _ = _accented_click_track(
+        sample_rate_hz,
+        bpm=120.0,
+        duration_seconds=12.0,
+        first_beat_seconds=0.5,
+        first_downbeat_index=2,
+    )
+
+    analysis = analyze_rhythm(samples, sample_rate_hz)
+
+    assert analysis.downbeat_confidence is not None
+    assert analysis.beats[0].bar_number == 1
+    for previous, current in zip(analysis.beats, analysis.beats[1:], strict=False):
+        expected_increment = int(current.beat_in_bar == 1)
+        assert current.bar_number == previous.bar_number + expected_increment
+
+
+def test_analyze_rhythm_does_not_infer_downbeat_from_short_audio() -> None:
+    sample_rate_hz = 22_050
+    samples, _ = _accented_click_track(
+        sample_rate_hz,
+        bpm=120.0,
+        duration_seconds=6.0,
+        first_beat_seconds=0.5,
+        first_downbeat_index=2,
+    )
+
+    analysis = analyze_rhythm(samples, sample_rate_hz)
+
+    assert analysis.bpm is not None
+    assert len(analysis.beats) < 12
+    assert analysis.downbeat_confidence is None
+    assert [beat.beat_in_bar for beat in analysis.beats] == [
+        index % 4 + 1 for index in range(len(analysis.beats))
+    ]
 
 
 def test_analyze_rhythm_recognizes_silence() -> None:
@@ -217,6 +313,8 @@ def test_beat_event_rejects_out_of_range_fields(field: str, value: float) -> Non
         ("bpm", -1.0),
         ("tempo_confidence", -0.1),
         ("tempo_confidence", 1.1),
+        ("downbeat_confidence", -0.1),
+        ("downbeat_confidence", 1.1),
     ],
 )
 def test_rhythm_analysis_rejects_out_of_range_fields(
@@ -241,6 +339,13 @@ def test_rhythm_analysis_rejects_out_of_range_fields(
         {
             "bpm": None,
             "tempo_confidence": 0.5,
+            "beats": [],
+            "is_silent": False,
+        },
+        {
+            "bpm": None,
+            "tempo_confidence": 0.0,
+            "downbeat_confidence": 0.5,
             "beats": [],
             "is_silent": False,
         },

@@ -63,7 +63,7 @@ Audio with no detectable beat produces an empty beat grid, which `recognize_chor
 Per stage, in pipeline order:
 
 - [Audio ingestion](docs/pipeline/audio.md) — decoding a file to mono `float32` samples
-- [Rhythm analysis](docs/pipeline/rhythm.md) — onset strength, tempo, and beat tracking
+- [Rhythm analysis](docs/pipeline/rhythm.md) — onset strength, tempo, beat tracking, and 4/4 downbeat inference
 - [Chroma features](docs/pipeline/chroma.md) — pitch-class energy, per frame and per beat
 - [Chord recognition](docs/pipeline/chords.md) — scoring beats against chord templates
 
@@ -84,7 +84,7 @@ All four must pass before a change is considered done. [`AGENTS.md`](AGENTS.md) 
 
 - [x] Audio loading and resampling
 - [x] Onset strength, global tempo, and beat tracking
-- [ ] Downbeat inference
+- [x] Downbeat inference
 - [x] Chroma feature extraction and beat-synchronous aggregation
 - [x] Chord recognition
 - [ ] Beat-aligned segmentation

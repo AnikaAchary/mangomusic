@@ -14,7 +14,7 @@ becomes chord labels.
        rhythm.analyze_rhythm    chroma.compute_chroma
                    │                   │
                    ▼                   ▼
-        beat times (beat_count,)   chroma (12, frame_count)
+     beat times + 4/4 bar phase   chroma (12, frame_count)
                    │               + frame times (frame_count,)
                    └─────────┬─────────┘
                              │  chroma.aggregate_chroma_by_beat
@@ -34,7 +34,7 @@ parallel with rhythm analysis.
 | Stage | Entry point | Consumes | Produces |
 | --- | --- | --- | --- |
 | [Audio ingestion](pipeline/audio.md) | `load_audio` | A file path | `(samples, sample_rate_hz)` |
-| [Rhythm analysis](pipeline/rhythm.md) | `analyze_rhythm` | Samples | `RhythmAnalysis` with beat timestamps |
+| [Rhythm analysis](pipeline/rhythm.md) | `analyze_rhythm` | Samples | `RhythmAnalysis` with beat timestamps and 4/4 bar positions |
 | [Chroma features](pipeline/chroma.md) | `compute_chroma` | Samples | `(12, frame_count)` + frame times |
 | [Beat aggregation](pipeline/chroma.md#beat-synchronous-aggregation) | `aggregate_chroma_by_beat` | Chroma, frame times, beat times | `(12, beat_count)` |
 | [Chord recognition](pipeline/chords.md) | `recognize_chords` | Beat chroma, beat times | `ChordAnalysis` |
@@ -115,9 +115,6 @@ the rule in full.
 Two stages are not built yet; the [roadmap](../README.md#roadmap) is the source
 of truth for status.
 
-- **Downbeat inference** slots into rhythm analysis, replacing the current
-  assumption that the first detected beat is beat one of bar one. It changes
-  `BeatEvent.bar_number` and `beat_in_bar` only — no downstream shape changes.
 - **Beat-aligned segmentation** consumes `ChordAnalysis` and merges runs of
   equal labels into timed chord regions, which is also where continuity across
   beats would be enforced.
