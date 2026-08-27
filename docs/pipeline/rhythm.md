@@ -1,9 +1,9 @@
 # Rhythm analysis
 
-`mangomusic.rhythm` finds the pulse: a global tempo and the timestamps of
-individual beats. Those timestamps become the grid every later stage is
-measured against — chroma is aggregated per beat, and chords are labeled per
-beat.
+`mangomusic.rhythm` finds the pulse: a global tempo, the timestamps of
+individual beats, and their positions in an inferred 4/4 bar. Those timestamps
+become the grid every later stage is measured against — chroma is aggregated
+per beat, and chords are labeled per beat.
 
 ## Public API
 
@@ -32,6 +32,7 @@ not need to call both.
 | --- | --- | --- |
 | `bpm` | `float \| None` | Global tempo in beats per minute, or `None` when no tempo was found |
 | `tempo_confidence` | `float` | How steady the detected pulse is, in `[0.0, 1.0]` |
+| `downbeat_confidence` | `float \| None` | Confidence in the inferred 4/4 phase, or `None` when it is ambiguous |
 | `beats` | `list[BeatEvent]` | Detected beats in time order |
 | `is_silent` | `bool` | Whether the input was judged silent |
 
@@ -40,10 +41,10 @@ analyzed signal), `bar_number` (from `1`), `beat_in_bar` (`1` to `4`), and a
 per-beat `confidence` in `[0.0, 1.0]`.
 
 Both models are pydantic and validate their own consistency: an analysis with no
-`bpm` may not carry beats or a nonzero confidence, an analysis with a `bpm` must
-carry beats, and a silent analysis may not carry a `bpm` at all. These
-combinations cannot be constructed, so callers can branch on `bpm is None`
-alone.
+`bpm` may not carry beats, tempo confidence, or downbeat confidence; an
+analysis with a `bpm` must carry beats; and a silent analysis may not carry a
+`bpm` at all. These combinations cannot be constructed, so callers can branch
+on `bpm is None` alone.
 
 ## Conventions and units
 
@@ -60,11 +61,21 @@ alone.
 
 ## Bars and downbeats
 
-Beat grouping assumes 4/4 time. The first detected beat is labeled beat one of
-bar one — the grouping counts from the first beat found, and does **not** infer
-the musical downbeat. A recording that begins mid-bar or with a pickup will have
-bar lines in the wrong place, even when the beat timestamps themselves are
-correct.
+Beat grouping assumes 4/4 time. Rhythm analysis measures low-, mid-, and
+high-frequency spectral-flux accents around every tracked beat, scores the four
+possible bar phases, and labels the strongest sufficiently distinct phase as
+beat one. It needs at least twelve tracked beats so every phase has evidence
+from three bars.
+
+`downbeat_confidence` is a unitless score in `[0.0, 1.0]` based on the winning
+phase's separation from the runner-up. When the recording is too short or no
+phase is sufficiently distinct, it is `None`. In that ambiguous case, beat and
+bar numbering retains the fallback convention that the first tracked beat is
+beat one of bar one.
+
+A recording that begins mid-bar or with a pickup can start with a partial bar.
+For example, the result may begin with beats three and four of bar one, followed
+by beat one of bar two. Bar numbers always begin at one for the analyzed signal.
 
 ## Degenerate input
 
@@ -85,7 +96,10 @@ non-positive sample rate, a non-mono or empty array, or non-finite samples.
   analyze sections separately using the time range arguments of
   [`load_audio`](audio.md).
 - 4/4 only. Other meters are not detected.
-- No downbeat inference — see above.
+- Downbeat inference is an accent-based heuristic. Music without recurring
+  downbeat accents, or with heavy syncopation or missing tracked beats, can be
+  ambiguous or incorrectly aligned. Check `downbeat_confidence` before relying
+  on bar positions.
 
 ## Next stage
 
